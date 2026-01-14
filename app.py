@@ -5,93 +5,99 @@ from flask import Flask
 from threading import Thread
 from dotenv import load_dotenv
 
+# Load local .env if it exists
 load_dotenv()
+
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
-API_KEY = os.getenv("SOLSCAN_API_KEY")
+SOL_API_KEY = os.getenv("SOLSCAN_API_KEY")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHANNEL_ID = os.getenv("TELEGRAM_CHAT_ID")
-# Split the wallet list from .env
-WALLETS_RAW = os.getenv("TRACKED_WALLETS", "")
-WALLETS = [w.strip() for w in WALLETS_RAW.split(",") if w.strip()]
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# Wallets to track
+WALLETS_STR = os.getenv("TRACKED_WALLETS", "")
+TRACKED_WALLETS = [w.strip() for w in WALLETS_STR.split(",") if w.strip()]
 
-def send_alert(msg):
-    """Sends a message to the Telegram Channel."""
+def send_telegram(message):
+    """Helper to send messages with error logging."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
-        "chat_id": CHANNEL_ID,
-        "text": msg,
+        "chat_id": CHAT_ID,
+        "text": message,
         "parse_mode": "HTML",
         "disable_web_page_preview": False
     }
     try:
-        r = requests.post(url, json=payload)
-        if r.status_code != 200:
-            print(f"❌ Telegram Error: {r.text}")
+        response = requests.post(url, json=payload)
+        result = response.json()
+        if not result.get("ok"):
+            print(f"❌ Telegram Error: {result.get('description')}")
         else:
-            print("✅ Telegram alert sent successfully.")
+            print("✅ Telegram message sent.")
     except Exception as e:
-        print(f"❌ Connection Error: {e}")
+        print(f"❌ Network Error (Telegram): {e}")
 
-def monitor():
-    print(f"🚀 WEAPON ACTIVE: Monitoring {len(WALLETS)} Smart Wallets...")
+def monitor_wallets():
+    """Background task to watch Solana wallets."""
+    print(f"🚀 ALIEN BRAIN ACTIVE. Tracking: {len(TRACKED_WALLETS)} wallets.")
 
-    # --- STARTUP PING ---
-    # This tells you immediately if the bot is working
-    send_alert("👽 <b>ALIEN BRAIN IS ONLINE</b>\nStatus: Tracking Smart Money...")
+    # 1. TEST TELEGRAM IMMEDIATELY ON STARTUP
+    send_telegram(f"👽 <b>ALIEN BRAIN ONLINE</b>\nTracking {len(TRACKED_WALLETS)} Smart Wallets.\n<i>If you see this, connection is perfect.</i>")
 
-    last_tx = {wallet: None for wallet in WALLETS}
-    headers = {"token": API_KEY}
+    # Store last seen transaction for each wallet
+    last_txs = {wallet: None for wallet in TRACKED_WALLETS}
+    headers = {"token": SOL_API_KEY}
 
     while True:
-        for wallet in WALLETS:
+        for wallet in TRACKED_WALLETS:
             try:
-                # Solscan V2 DeFi Activity (Token Swaps)
-                url = f"https://pro-api.solscan.io/v2.0/account/defi/activities?address={wallet}&activity_type=ACTIVITY_TOKEN_SWAP&page=1&page_size=1"
-                resp = requests.get(url, headers=headers).json()
+                # Use the V2 Transactions endpoint
+                url = f"https://pro-api.solscan.io/v2.0/account/transactions?address={wallet}&limit=1"
+                response = requests.get(url, headers=headers)
+                data = response.json()
 
-                if resp.get("success") and resp.get("data"):
-                    activity = resp["data"][0]
-                    tx_hash = activity.get("trans_id")
+                if data.get("success") and data.get("data"):
+                    latest_tx = data["data"][0].get("tx_hash")
 
-                    # If this is a new transaction we haven't seen yet
-                    if tx_hash != last_tx[wallet]:
-                        # Extract trade details
-                        from_token = activity.get("from_symbol", "???")
-                        to_token = activity.get("to_symbol", "???")
-                        to_amount = activity.get("to_amount", 0)
-                        to_address = activity.get("to_address", "")
+                    # If this is the first time checking, just save the hash
+                    if last_txs[wallet] is None:
+                        last_txs[wallet] = latest_tx
+                        continue
 
-                        alert_msg = (
-                            f"🧠 <b>ALIEN BRAIN DETECTED TRADE</b>\n"
+                    # If we find a NEW transaction
+                    if latest_tx != last_txs[wallet]:
+                        msg = (
+                            f"🧠 <b>NEW WHALE MOVEMENT</b>\n"
                             f"━━━━━━━━━━━━━━━━━━\n"
-                            f"👤 <b>Wallet:</b> <code>{wallet[:6]}...{wallet[-4:]}</code>\n"
-                            f"🔄 <b>Action:</b> Swapped {from_token} ➡️ <b>{to_amount} {to_token}</b>\n"
-                            f"━━━━━━━━━━━━━━━━━━\n"
-                            f"📈 <a href='https://dexscreener.com/solana/{to_address}'>View Live Chart</a>\n"
-                            f"🔬 <a href='https://solscan.io/tx/{tx_hash}'>Solscan Details</a>"
+                            f"👤 <b>Wallet:</b> <code>{wallet}</code>\n"
+                            f"🔗 <a href='https://solscan.io/tx/{latest_tx}'>View Transaction</a>\n"
+                            f"📊 <a href='https://dexscreener.com/solana/{wallet}'>View Wallet Chart</a>\n"
+                            f"━━━━━━━━━━━━━━━━━━"
                         )
+                        send_telegram(msg)
+                        last_txs[wallet] = latest_tx
 
-                        send_alert(alert_msg)
-                        last_tx[wallet] = tx_hash
-
-                # Small delay to avoid API rate limits
-                time.sleep(2)
+                # Sleep briefly between wallets to avoid rate limits
+                time.sleep(1)
 
             except Exception as e:
-                print(f"❌ Error tracking {wallet}: {e}")
+                print(f"⚠️ Error checking {wallet}: {e}")
 
-        # Check every 20 seconds
-        time.sleep(20)
+        # Wait 30 seconds before next full scan
+        time.sleep(30)
 
 @app.route('/')
-def health():
-    return "ALIEN BRAIN STATUS: ONLINE"
+def health_check():
+    return "BOT IS RUNNING", 200
 
 if __name__ == "__main__":
-    # Start monitor in a separate thread
-    Thread(target=monitor, daemon=True).start()
-    # Port for Render
+    # Start the monitoring thread
+    monitor_thread = Thread(target=monitor_wallets, daemon=True)
+    monitor_thread.start()
+
+    # Start the web server (Render requires this)
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
+
+
