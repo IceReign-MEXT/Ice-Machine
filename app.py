@@ -1,103 +1,126 @@
 import os
 import time
 import requests
+import telebot
 from flask import Flask
 from threading import Thread
 from dotenv import load_dotenv
 
-# Load local .env if it exists
 load_dotenv()
-
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
-SOL_API_KEY = os.getenv("SOLSCAN_API_KEY")
+API_KEY = os.getenv("SOLSCAN_API_KEY")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-# Wallets to track
-WALLETS_STR = os.getenv("TRACKED_WALLETS", "")
-TRACKED_WALLETS = [w.strip() for w in WALLETS_STR.split(",") if w.strip()]
+CHANNEL_ID = os.getenv("TELEGRAM_CHAT_ID") # Your channel -1002384609234
 
-def send_telegram(message):
-    """Helper to send messages with error logging."""
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": False
-    }
+# YOUR RECEIVING WALLET (The "Safe Wallet" for Payments)
+MY_SAFE_WALLET = "8dtuyskTtsB78DFDPWZszarvDpedwftKYCoMdZwjHbxy"
+
+# THE WHALES TO TRACK (The Alien Brains)
+TRACKED_WALLETS = [
+    "3KJZZxQ7yYNLqNzsxN33x1V3pav2nRybtXXrBpNm1Zqf",
+    "3JqvK1ZAt67nipBVgZj6zWvuT8icMWBMWyu5AwYnhVss",
+    MY_SAFE_WALLET # Keeping yours in the list to track your own moves too
+]
+
+bot = telebot.TeleBot(BOT_TOKEN)
+
+# --- 1. TELEGRAM COMMAND HANDLERS (How you get paid) ---
+
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    welcome_text = (
+        "🛸 <b>WELCOME TO THE ALIEN BRAIN TERMINAL</b>\n\n"
+        "I track the world's most profitable Solana Insiders in real-time.\n\n"
+        "💰 <b>WANT VIP ACCESS?</b>\n"
+        "Get instant buy/sell alerts with Photon & DexScreener links.\n\n"
+        "Use /pay to see subscription plans."
+    )
+    bot.reply_to(message, welcome_text, parse_mode='HTML')
+
+@bot.message_handler(commands=['pay', 'vip', 'subscribe'])
+def send_payment(message):
+    payment_text = (
+        "💎 <b>VIP SUBSCRIPTION PLANS</b>\n\n"
+        "🟢 1 Month VIP: <b>0.5 SOL</b>\n"
+        "🔵 Lifetime Access: <b>1.5 SOL</b>\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "⚠️ <b>SEND PAYMENT TO:</b>\n"
+        f"<code>{MY_SAFE_WALLET}</code>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "<i>After sending payment, DM @YourUsername with your transaction hash to be added to the Private Signal Channel.</i>"
+    )
+    bot.reply_to(message, payment_text, parse_mode='HTML')
+
+# --- 2. WHALE TRACKER LOGIC (The Signal Generator) ---
+
+def send_alert(msg):
+    """Sends signal to the VIP Channel."""
     try:
-        response = requests.post(url, json=payload)
-        result = response.json()
-        if not result.get("ok"):
-            print(f"❌ Telegram Error: {result.get('description')}")
-        else:
-            print("✅ Telegram message sent.")
+        bot.send_message(CHANNEL_ID, msg, parse_mode='HTML', disable_web_page_preview=True)
     except Exception as e:
-        print(f"❌ Network Error (Telegram): {e}")
+        print(f"Signal Error: {e}")
 
-def monitor_wallets():
-    """Background task to watch Solana wallets."""
-    print(f"🚀 ALIEN BRAIN ACTIVE. Tracking: {len(TRACKED_WALLETS)} wallets.")
+def monitor_whales():
+    print("🚀 WHALE MONITOR ACTIVE...")
+    # Initial startup message
+    send_alert("<b>🛸 ALIEN BRAIN TERMINAL ONLINE</b>\n<i>Monitoring Elite Wallets...</i>")
 
-    # 1. TEST TELEGRAM IMMEDIATELY ON STARTUP
-    send_telegram(f"👽 <b>ALIEN BRAIN ONLINE</b>\nTracking {len(TRACKED_WALLETS)} Smart Wallets.\n<i>If you see this, connection is perfect.</i>")
-
-    # Store last seen transaction for each wallet
     last_txs = {wallet: None for wallet in TRACKED_WALLETS}
-    headers = {"token": SOL_API_KEY}
+    headers = {"token": API_KEY}
 
     while True:
         for wallet in TRACKED_WALLETS:
             try:
-                # Use the V2 Transactions endpoint
-                url = f"https://pro-api.solscan.io/v2.0/account/transactions?address={wallet}&limit=1"
-                response = requests.get(url, headers=headers)
-                data = response.json()
+                # Track Swaps using Solscan Pro API
+                url = f"https://pro-api.solscan.io/v2.0/account/defi/activities?address={wallet}&activity_type=ACTIVITY_TOKEN_SWAP&page=1&page_size=1"
+                response = requests.get(url, headers=headers).json()
 
-                if data.get("success") and data.get("data"):
-                    latest_tx = data["data"][0].get("tx_hash")
+                if response.get("success") and response.get("data"):
+                    trade = response["data"][0]
+                    tx_hash = trade.get("trans_id")
 
-                    # If this is the first time checking, just save the hash
-                    if last_txs[wallet] is None:
-                        last_txs[wallet] = latest_tx
-                        continue
+                    if tx_hash != last_txs[wallet]:
+                        token_name = trade.get("to_symbol", "Unknown")
+                        token_addr = trade.get("to_address", "")
+                        amount = trade.get("to_amount", 0)
 
-                    # If we find a NEW transaction
-                    if latest_tx != last_txs[wallet]:
-                        msg = (
-                            f"🧠 <b>NEW WHALE MOVEMENT</b>\n"
+                        signal = (
+                            f"🔔 <b>INSIDER ACTION DETECTED!</b>\n"
                             f"━━━━━━━━━━━━━━━━━━\n"
-                            f"👤 <b>Wallet:</b> <code>{wallet}</code>\n"
-                            f"🔗 <a href='https://solscan.io/tx/{latest_tx}'>View Transaction</a>\n"
-                            f"📊 <a href='https://dexscreener.com/solana/{wallet}'>View Wallet Chart</a>\n"
+                            f"👤 <b>Whale:</b> <code>{wallet[:4]}...{wallet[-4:]}</code>\n"
+                            f"💰 <b>Bought:</b> {amount:,.2f} <b>{token_name}</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"🚀 <b>QUICK BUY:</b>\n"
+                            f"🔗 <a href='https://photon-sol.tinyastro.io/en/lp/{token_addr}'>Photon (Fastest)</a>\n"
+                            f"📊 <a href='https://dexscreener.com/solana/{token_addr}'>DexScreener</a>\n"
+                            f"🛡️ <a href='https://rugcheck.xyz/tokens/{token_addr}'>RugCheck</a>\n"
                             f"━━━━━━━━━━━━━━━━━━"
                         )
-                        send_telegram(msg)
-                        last_txs[wallet] = latest_tx
+                        send_alert(signal)
+                        last_txs[wallet] = tx_hash
 
-                # Sleep briefly between wallets to avoid rate limits
-                time.sleep(1)
-
+                time.sleep(2) # API Protection
             except Exception as e:
-                print(f"⚠️ Error checking {wallet}: {e}")
+                print(f"Tracking Error: {e}")
 
-        # Wait 30 seconds before next full scan
-        time.sleep(30)
+        time.sleep(20) # Check cycle
+
+# --- 3. FLASK SERVER & EXECUTION ---
 
 @app.route('/')
-def health_check():
-    return "BOT IS RUNNING", 200
+def home():
+    return "ALIEN BRAIN IS ACTIVE", 200
+
+def run_bot():
+    bot.polling(none_stop=True)
 
 if __name__ == "__main__":
-    # Start the monitoring thread
-    monitor_thread = Thread(target=monitor_wallets, daemon=True)
-    monitor_thread.start()
-
-    # Start the web server (Render requires this)
+    # Start Whale Tracker
+    Thread(target=monitor_whales, daemon=True).start()
+    # Start Telegram Command Listener
+    Thread(target=run_bot, daemon=True).start()
+    # Start Web Server for Render
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-
-
-
