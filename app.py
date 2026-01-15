@@ -9,55 +9,59 @@ from dotenv import load_dotenv
 load_dotenv()
 app = Flask(__name__)
 
-# --- CONFIG ---
+# --- CONFIGURATION ---
 API_KEY = os.getenv("SOLSCAN_API_KEY")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHANNEL_ID = os.getenv("TELEGRAM_CHAT_ID")
+CHANNEL_ID = os.getenv("TELEGRAM_CHAT_ID") # Your channel -1002384609234
+
+# YOUR RECEIVING WALLET (For Payments & Tracking)
 SAFE_WALLET = "8dtuyskTtsB78DFDPWZszarvDpedwftKYCoMdZwjHbxy"
 
-# Wallets to monitor
+# WHALES TO TRACK (The Alien Brains)
 TRACKED_WALLETS = [
-    "GJqcJCSCntX3FXoA3FxZdWFpQijfKK73ux6D6Towpump",
-    "DZaUsRPR5daQw3UZLz5p4aDaa2a2wDeQXkgtXhXJKx6m",
+    "3KJZZxQ7yYNLqNzsxN33x1V3pav2nRybtXXrBpNm1Zqf",
+    "3JqvK1ZAt67nipBVgZj6zWvuT8icMWBMWyu5AwYnhVss",
     SAFE_WALLET
 ]
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# --- COMMANDS FOR USERS ---
+# --- 1. USER INTERACTION (How they talk to the bot) ---
 
 @bot.message_handler(commands=['start'])
-def start(m):
-    msg = (
-        "🛸 <b>ALIEN BRAIN TERMINAL</b>\n\n"
-        "Tracking the most profitable Solana insiders.\n"
-        "To get VIP access to the signal channel, use /pay"
+def welcome(m):
+    text = (
+        "🛸 <b>ALIEN BRAIN SIGNAL TERMINAL</b>\n\n"
+        "I am live-tracking 3 high-profit whale wallets on Solana.\n\n"
+        "✅ <b>Status:</b> Monitoring Active\n"
+        "📢 <b>Channel:</b> Signals are sent to the VIP channel.\n\n"
+        "💰 <b>Want VIP Access?</b> Use /pay to get the payment address."
     )
-    bot.reply_to(m, msg, parse_mode='HTML')
+    bot.reply_to(m, text, parse_mode='HTML')
 
-@bot.message_handler(commands=['pay'])
-def pay(m):
-    msg = (
-        "💎 <b>VIP ACCESS PLAN</b>\n"
+@bot.message_handler(commands=['pay', 'subscribe'])
+def payment_info(m):
+    text = (
+        "💎 <b>VIP LIFETIME ACCESS</b>\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "Price: <b>0.5 SOL</b>\n"
-        "Duration: <b>Lifetime Access</b>\n\n"
-        "⚠️ <b>SEND SOL TO:</b>\n"
+        "Price: <b>0.5 SOL</b>\n\n"
+        "⚠️ <b>SEND PAYMENT TO (Solana):</b>\n"
         f"<code>{SAFE_WALLET}</code>\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "<i>DM @YourUsername with TX hash after payment.</i>"
+        "<i>After paying, send your Transaction ID to @YourUsername to be added to the Private Feed.</i>"
     )
-    bot.reply_to(m, msg, parse_mode='HTML')
+    bot.reply_to(m, text, parse_mode='HTML')
 
-# --- THE TRACKER ---
+# --- 2. THE SIGNAL GENERATOR (Keeps the channel alive) ---
 
-def monitor():
-    print("🚀 MONITOR STARTING...")
-    # This proves the bot is connected to your channel
+def monitor_whales():
+    print("🚀 ALIEN BRAIN MONITORING STARTING...")
+
+    # Send "Online" notification to the channel
     try:
-        bot.send_message(CHANNEL_ID, "✅ <b>ALIEN BRAIN v3.0 DEPLOYED</b>\n<i>Universal Tracking Mode: Active</i>", parse_mode='HTML')
+        bot.send_message(CHANNEL_ID, "🟢 <b>TERMINAL ONLINE</b>\n<i>The Alien Brain is now scanning the blockchain...</i>", parse_mode='HTML')
     except Exception as e:
-        print(f"FAILED TO SEND STARTUP MSG: {e}")
+        print(f"Channel Startup Error: {e}")
 
     last_txs = {wallet: None for wallet in TRACKED_WALLETS}
     headers = {"token": API_KEY}
@@ -65,12 +69,11 @@ def monitor():
     while True:
         for wallet in TRACKED_WALLETS:
             try:
-                # UNIVERSAL ENDPOINT (Works with more API keys)
-                url = f"https://pro-api.solscan.io/v2.0/account/transactions?address={wallet}&limit=2"
+                # Use Universal Transaction endpoint for maximum reliability
+                url = f"https://pro-api.solscan.io/v2.0/account/transactions?address={wallet}&limit=1"
                 resp = requests.get(url, headers=headers).json()
 
                 if resp.get("success") and resp.get("data"):
-                    # Get the most recent transaction
                     tx = resp["data"][0]
                     tx_hash = tx.get("tx_hash")
 
@@ -79,34 +82,38 @@ def monitor():
                         continue
 
                     if tx_hash != last_txs[wallet]:
-                        # A NEW MOVEMENT HAPPENED
-                        alert = (
-                            f"🧠 <b>ALIEN BRAIN: WHALE MOVEMENT</b>\n"
+                        # A NEW TRADE DETECTED!
+                        signal = (
+                            f"🧠 <b>ALIEN BRAIN: SIGNAL DETECTED</b>\n"
                             f"━━━━━━━━━━━━━━━━━━\n"
-                            f"👤 <b>Wallet:</b> <code>{wallet[:6]}...</code>\n"
+                            f"👤 <b>Whale:</b> <code>{wallet[:4]}...{wallet[-4:]}</code>\n"
                             f"🔗 <a href='https://solscan.io/tx/{tx_hash}'>View Transaction</a>\n"
-                            f"📊 <a href='https://dexscreener.com/solana/{wallet}'>Wallet Chart</a>\n"
+                            f"📊 <a href='https://dexscreener.com/solana/{wallet}'>View Wallet Chart</a>\n"
                             f"━━━━━━━━━━━━━━━━━━\n"
-                            f"⚡ <a href='https://photon-sol.tinyastro.io/en/lp/{wallet}'>Quick Snipe</a>"
+                            f"⚡ <a href='https://photon-sol.tinyastro.io/en/lp/{wallet}'>Quick Snipe (Photon)</a>\n"
+                            f"🛡️ <a href='https://rugcheck.xyz/tokens/{wallet}'>Check Safety</a>"
                         )
-                        bot.send_message(CHANNEL_ID, alert, parse_mode='HTML', disable_web_page_preview=True)
+                        bot.send_message(CHANNEL_ID, signal, parse_mode='HTML', disable_web_page_preview=True)
                         last_txs[wallet] = tx_hash
-                        print(f"✅ ALERT SENT FOR {wallet}")
+                        print(f"✅ ALERT SENT: {wallet}")
 
             except Exception as e:
                 print(f"Error checking {wallet}: {e}")
-            time.sleep(2) # Anti-rate limit
+            time.sleep(2) # Protect API credits
 
-        time.sleep(30) # Wait 30 seconds before next scan
+        time.sleep(25) # Check cycle speed
+
+# --- 3. SERVER & EXECUTION ---
 
 @app.route('/')
-def home():
+def health():
     return "ONLINE", 200
 
 if __name__ == "__main__":
-    # Start tracking thread
-    Thread(target=monitor, daemon=True).start()
-    # Start command polling
-    Thread(target=lambda: bot.polling(none_stop=True), daemon=True).start()
-    # Start Web Server
-    app.run(host='0.0.0.0', port=os.environ.get("PORT", 5000))
+    # Run Whale Monitoring in Background
+    Thread(target=monitor_whales, daemon=True).start()
+    # Run Telegram Command Listener in Background
+    Thread(target=lambda: bot.polling(non_stop=True), daemon=True).start()
+    # Start Web Server for Render
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
